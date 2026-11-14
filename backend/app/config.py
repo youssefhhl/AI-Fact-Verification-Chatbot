@@ -24,6 +24,22 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     llm_timeout_seconds: float = 30.0
 
+    # Embeddings: same model for ingestion and runtime queries.
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_device: str = "auto"  # "auto" (CUDA if available), "cuda" or "cpu"
+    embedding_batch_size: int = 128
+
+    qdrant_url: str = "http://localhost:6335"
+    qdrant_collection: str = "truthlens_knowledge"
+
+    # Knowledge-base retrieval (RAG): passages below rag_min_score (cosine similarity) are dropped.
+    rag_top_k: int = 5
+    rag_min_score: float = 0.3
+
+    # Web Agent: Tavily remote MCP server (key passed as ?tavilyApiKey=).
+    tavily_api_key: SecretStr | None = None
+    tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
+
 
 @lru_cache
 def get_settings() -> Settings:

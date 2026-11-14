@@ -74,3 +74,8 @@ def test_valid_chat_request_and_response() -> None:
 def test_empty_message_rejected(message: str) -> None:
     with pytest.raises(ValidationError):
         ChatRequest(message=message)
+
+
+def test_stance_defaults_to_not_assessed() -> None:
+    data = {"source": "s", "content": "c", "relevance": 0.5}
+    assert Evidence(**data).stance is None

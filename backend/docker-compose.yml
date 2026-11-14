@@ -1,0 +1,15 @@
+# Local infrastructure. PostgreSQL will be added here in a later phase.
+name: truthlens
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.1
+    ports:
+      # Host port 6335 (6333 is often taken by other local Qdrant instances).
+      - "6335:6333"  # REST API + dashboard: http://localhost:6335/dashboard
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

@@ -5,7 +5,10 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.162.7",
     "groq>=1.7.0",
+    "mcp>=2.3.0",
     "pydantic-settings>=2.16.3",
+    "qdrant-client>=1.20.0",
+    "sentence-transformers>=6.3.0",
     "uvicorn>=0.54.0",
 ]
 
