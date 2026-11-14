@@ -9,6 +9,26 @@ Planned stack: FastAPI, LangGraph, Groq LLM, Tavily (web), RAG over
 FEVER/SciFact (Sentence Transformers + Qdrant), scientific-publication search,
 PostgreSQL, React.
 
+## Screenshots
+
+A claim is checked against several sources and gets a verdict, a confidence score, an
+explanation, and its supporting and contradicting evidence with links:
+
+![Verification of a claim](docs/screenshots/verification.png)
+
+Follow-up questions stay in the same conversation. Here the agent recognizes that the
+evidence it already collected answers the question, so it reuses it instead of searching again:
+
+![Follow-up question that reuses evidence](docs/screenshots/follow-up.png)
+
+| Research in progress | Mobile layout |
+|---|---|
+| ![Research in progress](docs/screenshots/researching.png) | ![Mobile layout](docs/screenshots/mobile.png) |
+
+*These screenshots show the real frontend with a sample response. The papers are real
+results from OpenAlex and the TruthLens knowledge base; the verdict and explanation
+text were written for the example.*
+
 ## RAG architecture (planned)
 
 - **Embeddings:** Sentence Transformers, running locally, model
