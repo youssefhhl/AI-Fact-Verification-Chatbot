@@ -14,3 +14,11 @@ backend/data/**/*
 
 # Personal interview notes (not tracked)
 INTERVIEW_PREP.md
+INTERVIEW_PREP.*
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
