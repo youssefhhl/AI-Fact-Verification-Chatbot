@@ -11,3 +11,6 @@ __pycache__/
 backend/data/**/*
 !backend/data/**/
 !backend/data/**/.gitkeep
+
+# Personal interview notes (not tracked)
+INTERVIEW_PREP.md
