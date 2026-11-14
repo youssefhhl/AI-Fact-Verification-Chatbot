@@ -6,3 +6,8 @@ __pycache__/
 .ruff_cache/
 .idea/
 .vscode/
+
+# Datasets and generated data (download/prepare locally, see README)
+backend/data/**/*
+!backend/data/**/
+!backend/data/**/.gitkeep
