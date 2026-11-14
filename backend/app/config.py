@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     tavily_api_key: SecretStr | None = None
     tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
 
+    # Research Agent: scholarly REST APIs. Keys are optional (higher rate limits).
+    semantic_scholar_api_key: SecretStr | None = None
+    openalex_api_key: SecretStr | None = None
+    research_max_api_calls: int = 6  # provider searches per research run
+    research_max_iterations: int = 5  # LLM turns per research run
+    research_results_per_call: int = 5
+    research_http_timeout_seconds: float = 15.0
+
+    # Fact-Checking Agent (central): research budgets per user message.
+    fact_check_max_external_runs: int = 2  # Research Agent + Web Agent runs in total
+    fact_check_max_rag_calls: int = 2  # knowledge-base searches (the automatic first one included)
+    fact_check_max_research_iterations: int = 3  # LLM planning turns
+    fact_check_max_synthesis_evidence: int = 20  # newest items shown to the LLM for the verdict
+    fact_check_history_turns: int = 6  # recent turns used for context resolution
+
+    # PostgreSQL (application data + LangGraph checkpoints), SQLAlchemy URL with psycopg:
+    # postgresql+psycopg://user:password@localhost:5433/truthlens
+    database_url: SecretStr | None = None
+    test_database_url: SecretStr | None = None  # separate database for integration tests
+
 
 @lru_cache
 def get_settings() -> Settings:
