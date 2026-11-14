@@ -94,89 +94,94 @@ LangChain is not required for the current architecture. Prefer direct integratio
 
 ## 3. Target Architecture
 
-TruthLens uses three independent research agents.
+TruthLens has **one central Fact-Checking Agent** that reasons and orchestrates,
+two **specialized research agents**, and one **retrieval tool** (RAG).
 
-### 3.1 Web Agent
+| Component | Kind | Reasons with the LLM? | Decides the verdict? |
+|---|---|---|---|
+| Fact-Checking Agent | Central agent | Yes | **Yes** |
+| Web Agent | Specialized research agent | Yes (its own research) | No |
+| Research Agent | Specialized research agent | Yes (its own research) | No |
+| Knowledge-base retrieval (RAG) | Tool / service | No | No |
 
-Responsibilities:
-- Research the submitted claim on the web.
-- Use Tavily MCP for web search.
-- Retrieve relevant sources and their content.
-- Extract evidence and source references.
-- Return structured evidence.
+### 3.1 Fact-Checking Agent (central)
 
-The Web Agent must not determine the final verdict.
+The only component that decides verdicts. Responsibilities:
+- Receive the user's message and understand it in the conversation context.
+- Decide whether the message is a new claim or a follow-up (Context Resolution).
+- Decide whether previous evidence can be reused or new research is needed.
+- Decide which research agents and tools to invoke.
+- Collect and analyze the returned evidence: relevance, reliability, duplicates.
+- Classify evidence stance (supporting / contradicting / neutral).
+- Detect and resolve contradictions between sources.
+- Produce the final verdict, confidence, explanation and citations
+  (`VerificationResult`) and the user-facing answer.
 
-### 3.2 RAG Agent
+It absorbs the responsibilities of the former Evidence Reducer, which no longer
+exists as a separate component.
 
-Responsibilities:
-- Search the local FEVER and SciFact knowledge base.
-- Use Sentence Transformers to embed the user's claim.
-- Retrieve relevant documents from Qdrant.
-- Return relevant evidence with metadata.
+### 3.2 Web Agent (specialized research agent)
 
-The RAG Agent must not determine the final verdict.
+Implemented in `app/agents/web_agent.py`, with the MCP client in `app/services/tavily_mcp.py`.
+- Bounded tool loop: the LLM chooses tools; the Python controller enforces
+  3 searches, 5 extracted URLs, 5 iterations, no duplicate or unseen URLs.
+- Research the claim on the web using Tavily MCP.
+- Uses its own reasoning to plan queries, select sources and extract evidence.
+- Returns structured `Evidence` with source URLs and metadata.
+- Must not determine the final verdict.
 
-### 3.3 Research Agent
+### 3.3 Research Agent (specialized research agent)
 
-Responsibilities:
-- Search scientific publications.
-- Retrieve relevant scientific papers and abstracts.
-- Extract relevant evidence and references.
-- Return structured evidence.
+- Search scientific publications through a verified scientific API.
+- Uses its own reasoning to plan queries, select papers and extract evidence.
+- Returns structured `Evidence` with references.
+- The provider/API must be investigated and verified before implementation.
+  Do not invent API capabilities.
+- Must not determine the final verdict.
 
-The scientific research provider/API must be investigated and verified before implementation. Do not invent API capabilities.
+### 3.4 Knowledge-base retrieval — RAG (tool)
 
-The Research Agent must not determine the final verdict.
-
-### 3.4 Evidence Reducer
-
-The Evidence Reducer receives evidence from all research agents.
-
-Responsibilities:
-- Combine collected evidence.
-- Remove duplicates where appropriate.
-- Evaluate evidence relevance and reliability.
-- Identify supporting and contradicting evidence.
-- Detect contradictions between sources.
-- Ask the LLM to analyze the combined evidence.
-- Produce the final verdict, confidence, explanation, and citations.
-
-The Evidence Reducer is the component responsible for producing the final verification result.
+Not an agent. A deterministic retrieval tool in
+`app/services/retrieval_service.py`:
+- Embeds the claim with Sentence Transformers.
+- Searches the FEVER + SciFact passages in Qdrant.
+- Returns `Evidence` (text, source, URL, relevance = similarity score) via
+  `RetrievalService.search_evidence()`.
+- Does not call the LLM and leaves `stance` unset (`None`); the Fact-Checking
+  Agent assesses stance.
 
 ### 3.5 LangGraph Workflow
 
-LangGraph orchestrates the complete verification process.
+LangGraph orchestrates the process around the Fact-Checking Agent.
 
 Expected high-level workflow:
 
 ```text
-                 User Claim
+                 User Message
                       |
                       v
-              Context Resolution
+        Fact-Checking Agent: context resolution
+        (new claim? follow-up? reuse evidence?)
                       |
-                      v
-              Research Required?
-                      |
-          +-----------+-----------+
-          |           |           |
-          v           v           v
-       Web Agent   RAG Agent   Research Agent
-          |           |           |
-          +-----------+-----------+
-                      |
-                      v
-               Evidence Reducer
-                      |
-                      v
-              Verification Result
+              Research required?
+           no /            \ yes
+             /     +--------+---------+
+            |      |        |         |
+            |      v        v         v
+            |   Web Agent  RAG tool  Research Agent
+            |      |        |         |
+            |      +--------+---------+
+            |               |
+            v               v
+        Fact-Checking Agent: analysis and synthesis
+        (stance, contradictions, verdict, citations)
                       |
                       v
                  User Response
 ```
 
-The three research agents should execute in parallel when their evidence is required.
+The research components run in parallel when their evidence is required. The
+Fact-Checking Agent decides which ones are needed.
 
 LangGraph manages:
 - Shared workflow state
@@ -202,7 +207,7 @@ It must support:
 
 ### Context Resolution
 
-A Context Resolution node must determine whether a new user message:
+The Fact-Checking Agent performs Context Resolution (as a LangGraph node) and must determine whether a new user message:
 1. Introduces a new claim.
 2. Asks a follow-up about a previously verified claim.
 3. Requests clarification or additional analysis.
@@ -237,17 +242,14 @@ backend/
 │   │   └── health.py
 │   │
 │   ├── agents/
+│   │   ├── fact_checking_agent.py
 │   │   ├── web_agent.py
-│   │   ├── rag_agent.py
 │   │   └── research_agent.py
 │   │
 │   ├── graph/
 │   │   ├── state.py
 │   │   ├── nodes.py
 │   │   └── workflow.py
-│   │
-│   ├── reducer/
-│   │   └── evidence_reducer.py
 │   │
 │   ├── services/
 │   │   ├── llm_service.py
@@ -283,10 +285,9 @@ Create modules only when they are needed for the current phase.
 ### Module responsibilities
 
 - `api/`: HTTP endpoints and request/response handling.
-- `agents/`: Evidence collection from individual sources.
+- `agents/`: The central Fact-Checking Agent and the specialized research agents.
 - `graph/`: LangGraph state, nodes, and workflow configuration.
-- `reducer/`: Evidence analysis and final verification.
-- `services/`: Reusable integrations and application services.
+- `services/`: Reusable integrations and application services, including the RAG retrieval tool.
 - `schemas/`: Shared Pydantic models.
 - `database/`: Database models and persistence operations.
 - `tests/`: Automated tests.
@@ -349,6 +350,8 @@ Expected result: A stable data contract and reusable LLM integration.
 
 ### Phase 3 — RAG Pipeline
 
+Status: COMPLETED
+
 Objectives:
 
 1. Investigate FEVER and SciFact datasets.
@@ -360,7 +363,7 @@ Objectives:
 7. Implement offline ingestion.
 8. Store vectors, original text, and metadata in Qdrant.
 9. Implement a retrieval service.
-10. Implement the RAG Agent.
+10. Expose retrieval as a tool returning `Evidence` (`search_evidence`). RAG is a tool, not an agent.
 11. Test retrieval quality and metadata preservation.
 
 Important:
@@ -370,13 +373,13 @@ Important:
 - Use Qdrant as the only vector database.
 - Do not introduce FAISS.
 
-Expected result: A working local knowledge base and RAG Agent.
+Expected result: A working local knowledge base and a retrieval tool that returns `Evidence`.
 
 ### Phase 4 — External Research Agents
 
 Objectives:
 
-**Web Agent**
+**Web Agent** — Status: COMPLETED (Phase 4.1)
 - Verify Tavily MCP integration.
 - Implement web search.
 - Retrieve useful source content.
@@ -395,30 +398,28 @@ Both agents must return the shared Evidence schema.
 
 Expected result: Two external research agents capable of gathering evidence independently.
 
-### Phase 5 — Evidence Reducer
+### Phase 5 — Fact-Checking Agent
 
 Objectives:
-- Receive evidence from all agents.
-- Normalize and combine evidence.
-- Handle duplicates.
+- Implement the central Fact-Checking Agent.
+- Decide which research agents/tools to invoke for a claim.
+- Normalize, combine and deduplicate evidence.
 - Evaluate source relevance and reliability.
-- Identify supporting and contradicting evidence.
-- Detect conflicting information.
-- Use the LLM to analyze the evidence.
-- Generate the final verification result.
+- Classify evidence stance and detect conflicting information.
+- Use the LLM to analyze the evidence and resolve contradictions.
+- Generate the final verification result and user-facing answer.
 
-The reducer must follow the shared VerificationResult schema.
+The agent must follow the shared VerificationResult schema.
 
-Expected result: A component capable of producing structured, evidence-based verdicts.
+Expected result: A central agent capable of producing structured, evidence-based verdicts.
 
 ### Phase 6 — LangGraph Workflow
 
 Objectives:
 - Define the shared graph state.
 - Implement workflow nodes.
-- Integrate the three research agents.
-- Execute independent research agents in parallel.
-- Integrate the Evidence Reducer.
+- Integrate the Fact-Checking Agent, the two research agents and the RAG tool.
+- Execute the selected research components in parallel.
 - Handle agent failures and partial results.
 - Add LangGraph checkpointing.
 - Test the complete workflow.
@@ -433,7 +434,7 @@ Objectives:
 - Implement database models and repositories.
 - Persist conversation history.
 - Integrate LangGraph checkpointing.
-- Implement Context Resolution.
+- Implement Context Resolution in the Fact-Checking Agent.
 - Support follow-up questions.
 - Reuse previous evidence when appropriate.
 - Determine when additional research is necessary.

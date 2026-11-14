@@ -24,12 +24,31 @@ vectors + text + metadata in Qdrant. Dataset embeddings are persisted and are
 not regenerated per question.
 
 Runtime: embed the user's question with the same model, search Qdrant for
-relevant evidence, return the documents to the RAG Agent, and let the LLM
-analyze them.
+relevant evidence, and return it as `Evidence`. RAG is a retrieval tool, not an
+agent: the central Fact-Checking Agent analyzes the evidence.
 
-**Current status:** Phase 2 done. FastAPI app with a health endpoint, shared
+## Architecture
+
+One central **Fact-Checking Agent** reasons and orchestrates. It resolves the
+conversation context, decides whether to reuse evidence or research, calls the
+research components, then judges stance, resolves contradictions and produces
+the verdict. Two specialized **research agents** (Web via Tavily MCP, scientific
+publications) do their own research. **RAG** over FEVER/SciFact is a retrieval
+tool, not an agent. LangGraph runs the workflow.
+
+**Current status:** Phase 4.1 done (Web Agent over Tavily MCP). Phase 3 done (embeddings, Qdrant, ingestion, retrieval tool). Phase 2 done: FastAPI app with a health endpoint, shared
 Pydantic schemas (`Evidence`, `VerificationResult`, `ChatRequest`, `ChatResponse`)
 and an async Groq LLM service (`app/services/llm_service.py`).
+
+## Web Agent
+
+`app/agents/web_agent.py` is an LLM-driven research loop. The Groq LLM picks the next
+action by tool calling (`web_search`, `extract_pages`, `finish_research`). A Python
+controller runs each tool through an MCP client connected to Tavily's remote MCP
+server (`tavily_search`, `tavily_extract`), validates the arguments, and enforces
+hard limits: 3 searches, 5 extracted URLs and 5 LLM turns. It only extracts URLs
+found by its own searches and never extracts the same URL twice. It returns
+`Evidence` with `stance=None`; judging the claim is the Fact-Checking Agent's job.
 
 ## Prerequisites
 
@@ -51,6 +70,11 @@ Set these in `backend/.env` (see `.env.example`):
 - `GROQ_API_KEY`: your Groq API key. Only needed when the LLM is called; tests do not need it.
 - `GROQ_MODEL`: Groq model ID (default `llama-3.3-70b-versatile`).
 - `LLM_TIMEOUT_SECONDS`: request timeout (default 30).
+- `EMBEDDING_MODEL`: Sentence Transformers model (default `all-MiniLM-L6-v2`).
+- `EMBEDDING_DEVICE`: `auto` (CUDA GPU if available, else CPU), `cuda` or `cpu`.
+- `QDRANT_URL`: default `http://localhost:6335`. `QDRANT_COLLECTION`: default `truthlens_knowledge`.
+- `TAVILY_API_KEY`: Tavily key for the Web Agent (only needed for real web research).
+- `TAVILY_MCP_URL`: default `https://mcp.tavily.com/mcp/` (Tavily's remote MCP server).
 
 ## Datasets (not committed)
 
@@ -69,6 +93,21 @@ cd ../../..
 # Build the ~20k FEVER passage subset -> data/fever/fever_passages.jsonl
 uv run python scripts/prepare_fever.py
 ```
+
+## Vector database and ingestion
+
+Qdrant runs through Docker Compose with a persistent volume. It is exposed on host
+port **6335** to avoid clashing with other local Qdrant instances on 6333.
+
+```bash
+cd backend
+docker compose up -d qdrant          # dashboard: http://localhost:6335/dashboard
+uv run python -m scripts.ingest      # embeds FEVER + SciFact and upserts into Qdrant
+```
+
+Ingestion is safe to rerun: point IDs are derived from document IDs, so a rerun
+overwrites the same points. It uses the GPU if CUDA is available (~1 min on a
+GTX 1650), otherwise the CPU.
 
 ## Run the application
 
