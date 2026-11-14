@@ -51,12 +51,12 @@ Use the following technologies.
 | Agent orchestration | LangGraph |
 | LLM provider | Groq |
 | Web research | Tavily MCP |
-| Scientific research | Scientific publication APIs (to be selected and verified) |
+| Scientific research | Semantic Scholar, OpenAlex, Europe PMC (REST APIs) |
 | RAG datasets | FEVER and SciFact |
 | Embeddings | Sentence Transformers |
 | Vector database | Qdrant |
 | Relational database | PostgreSQL |
-| Frontend | React |
+| Frontend | React + TypeScript + Vite (Axios, TanStack React Query) |
 
 ### Important technology decisions
 
@@ -84,7 +84,8 @@ Do not introduce these without explicit approval:
 - FAISS
 - Another vector database
 - LangChain
-- Docker before the DevOps phase
+- Docker images of the application before the DevOps phase (Docker Compose for local
+  Qdrant and PostgreSQL is in use)
 - Kubernetes before the DevOps phase
 - Additional LLM providers without a concrete requirement
 
@@ -105,6 +106,14 @@ two **specialized research agents**, and one **retrieval tool** (RAG).
 | Knowledge-base retrieval (RAG) | Tool / service | No | No |
 
 ### 3.1 Fact-Checking Agent (central)
+
+Implemented in `app/agents/fact_checking_agent.py` (`handle_message(message, state)`),
+with conversation-state schemas in `app/schemas/conversation.py`. A turn runs four
+steps: context resolution (`NEW_VERIFICATION` / `REUSE_CONTEXT` / `TARGETED_RESEARCH`)
+→ research (RAG first, then LLM-chosen agents within configurable budgets) →
+LLM synthesis (relevance, stance, verdict) → Python guards (a verdict must be backed by
+evidence; confidence is capped by the number of independent sources). The agent is
+stateless; the caller stores the returned `ConversationState`.
 
 The only component that decides verdicts. Responsibilities:
 - Receive the user's message and understand it in the conversation context.
@@ -132,6 +141,10 @@ Implemented in `app/agents/web_agent.py`, with the MCP client in `app/services/t
 
 ### 3.3 Research Agent (specialized research agent)
 
+Implemented in `app/agents/research_agent.py`, with REST clients in
+`app/services/scholarly_apis.py` for Semantic Scholar, OpenAlex and Europe PMC
+(verified endpoints; no MCP). Bounded tool loop like the Web Agent; limits are
+configurable (`RESEARCH_MAX_API_CALLS`, `RESEARCH_MAX_ITERATIONS`).
 - Search scientific publications through a verified scientific API.
 - Uses its own reasoning to plan queries, select papers and extract evidence.
 - Returns structured `Evidence` with references.
@@ -151,6 +164,12 @@ Not an agent. A deterministic retrieval tool in
   Agent assesses stance.
 
 ### 3.5 LangGraph Workflow
+
+Implemented in `app/graph/` (`state.py`, `nodes.py`, `workflow.py`). Nodes:
+`resolve_context`, `knowledge_base`, `research_agent`, `web_agent`, `plan_research`,
+`synthesize`. Conditional edges: reuse → `synthesize`; research → `knowledge_base`
+first; `plan_research` fans out with `Send` to the components the LLM chose (one or
+several in parallel) or ends research. Nodes only call `FactCheckingAgent` methods.
 
 LangGraph orchestrates the process around the Fact-Checking Agent.
 
@@ -219,6 +238,11 @@ When the new question requires additional information, retrieve new evidence as 
 
 ### Persistence
 
+Implemented: `app/database/` (SQLAlchemy async models + repository), Alembic
+migrations in `migrations/`, `scripts/init_db.py` (migrations + checkpointer setup),
+`ConversationService` in `app/services/conversation_service.py`, and the API in
+`app/api/chat.py`. Conversation id = LangGraph `thread_id`.
+
 Use:
 - PostgreSQL for application data and conversation persistence.
 - LangGraph checkpointing for workflow state.
@@ -254,6 +278,8 @@ backend/
 │   ├── services/
 │   │   ├── llm_service.py
 │   │   ├── retrieval_service.py
+│   │   ├── tavily_mcp.py
+│   │   ├── scholarly_apis.py
 │   │   └── conversation_service.py
 │   │
 │   ├── schemas/
@@ -386,7 +412,7 @@ Objectives:
 - Extract structured evidence.
 - Preserve source URLs and metadata.
 
-**Research Agent**
+**Research Agent** — Status: COMPLETED (Phase 4.2)
 - Investigate suitable scientific publication APIs.
 - Compare available providers.
 - Verify API capabilities, limits, and access requirements.
@@ -399,6 +425,8 @@ Both agents must return the shared Evidence schema.
 Expected result: Two external research agents capable of gathering evidence independently.
 
 ### Phase 5 — Fact-Checking Agent
+
+Status: COMPLETED
 
 Objectives:
 - Implement the central Fact-Checking Agent.
@@ -415,6 +443,8 @@ Expected result: A central agent capable of producing structured, evidence-based
 
 ### Phase 6 — LangGraph Workflow
 
+Status: COMPLETED
+
 Objectives:
 - Define the shared graph state.
 - Implement workflow nodes.
@@ -427,6 +457,8 @@ Objectives:
 Expected result: A working end-to-end verification workflow.
 
 ### Phase 7 — Conversation Management and PostgreSQL
+
+Status: COMPLETED
 
 Objectives:
 - Configure PostgreSQL.
@@ -443,6 +475,8 @@ Expected result: Persistent conversations with contextual follow-up support.
 
 ### Phase 8 — Chat API
 
+Status: COMPLETED
+
 Objectives:
 - Implement the chat endpoint.
 - Connect HTTP requests to the LangGraph workflow.
@@ -454,6 +488,8 @@ Objectives:
 Expected result: A complete backend API ready for frontend integration.
 
 ### Phase 9 — React Frontend
+
+Status: COMPLETED (`frontend/`: React, TypeScript, Vite, Axios, TanStack React Query)
 
 Objectives:
 - Initialize the React application.
