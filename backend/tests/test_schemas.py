@@ -66,7 +66,7 @@ def test_valid_chat_request_and_response() -> None:
     assert req.message == "Is the Earth flat?"
     assert req.conversation_id is None
 
-    resp = ChatResponse(conversation_id="abc", answer="No.")
+    resp = ChatResponse(conversation_id="6f1c2a52-3b0e-4f3c-9d43-1d2b6f0b3a10", answer="No.")
     assert resp.verification is None
 
 
