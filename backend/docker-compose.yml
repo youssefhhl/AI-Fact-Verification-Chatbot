@@ -1,4 +1,4 @@
-# Local infrastructure. PostgreSQL will be added here in a later phase.
+# Local infrastructure. Credentials come from backend/.env (see .env.example).
 name: truthlens
 
 services:
@@ -11,5 +11,24 @@ services:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-truthlens}
+    ports:
+      # Host port 5433 (5432 is often taken by other local PostgreSQL instances).
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
+  postgres_data:
